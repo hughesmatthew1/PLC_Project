@@ -34,11 +34,8 @@ public final class Lexer {
         while(chars.has(0)){
             // If not whitespace, add token
             if (!match("[ \b\r\n\t]")){
-                    tokens.add(lexToken());
-            }
-            // If is whitespace, skip
-            else {
                 chars.skip();
+                tokens.add(lexToken());
             }
         }
         return tokens;
@@ -57,7 +54,7 @@ public final class Lexer {
         if (peek("[A-Za-z_]")){ // identified
             return lexIdentifier();
         }
-        else if (peek("'0'|[+-]?[1-9]")){ // number
+        else if (peek("'0'") || peek("[1-9]") || peek("[+-]?", "[1-9]")){ // number
             return lexNumber();
         }
         else if (peek("'")){ // character
@@ -66,7 +63,7 @@ public final class Lexer {
         else if (peek("\"")){ // string
             return lexString();
         }
-        else if (peek("[<>!=]'='?|'&&'|'||'|'any character'")){ // operator
+        else if (peek("[<>!=]'='?") || peek("&&") || peek("||") || peek(".")){ // operator
             return lexOperator();
         }
         throw new UnsupportedOperationException(); // In the case none of the above are met
@@ -75,8 +72,8 @@ public final class Lexer {
     public Token lexIdentifier() {
 
         match("[A-Za-z_]"); // matches first character of an identifier
-        while (peek("[A-Za-z0-9_-")){ // matches ensuing characters of an identifier
-            match("[A-Za-z0-9_-");
+        while (peek("[A-Za-z0-9_-]")){ // matches ensuing characters of an identifier
+            match("[A-Za-z0-9_-]");
         }
 
         return chars.emit(Token.Type.IDENTIFIER);
@@ -98,7 +95,9 @@ public final class Lexer {
                 throw new ParseException("Invalid Decimal", chars.index);
             }
             else{
-                match("[0-9]+");
+                while(peek("[0-9]")){
+                    match("[0-9]");
+                }
             }
             return chars.emit(Token.Type.DECIMAL);
         }
@@ -106,27 +105,29 @@ public final class Lexer {
 
     public Token lexCharacter() {
         match("'"); // Matches first character of a character
-        if (peek("\\")){ // Account for escape sequence
-            lexEscape();
+        if (peek("\\\\") | peek("[^'\\n\\r]")){ // Account for valid char
+            if (peek("\\\\")){ // Account for escape sequence
+                lexEscape();
+            }
+            else{ // Match non-escape (or single quote) characters
+                match("[^'\\n\\r]");
+            }
+            if (!match("'")){ // Ensure proper char termination
+                throw new ParseException("Unterminated Character", chars.index);
+            }
+            return chars.emit(Token.Type.CHARACTER);
         }
-        else{ // Match non-escape (or single quote) characters
-            match("[^'\\]");
-        }
-        if (!match("'")){ // Ensure proper char termination
-            throw new ParseException("Unterminated Character", chars.index);
-        }
-
-        return chars.emit(Token.Type.CHARACTER);
+        throw new ParseException("Invalid Character", chars.index);
     }
 
     public Token lexString() {
         match("\""); // Matches first character of a string
         while (!peek("\"")){ // Loop until closing quotations found
-            if (peek("\\")){ // Account for escape sequences
+            if (peek("\\\\")){ // Account for escape sequences
                 lexEscape();
             }
-            else if (peek("[^\"\n\r\\]")){ // Account for normal characters
-                match("[^\"\n\r\\]");
+            else if (peek("[^\"\\n\\r\\\\]")){ // Account for normal characters
+                match("[^\"\\n\\r\\\\]");
             }
             else{ // Account for invalid characters (ie new line)
                 throw new ParseException("Invalid String Literal", chars.index);
@@ -141,17 +142,21 @@ public final class Lexer {
     }
 
     public void lexEscape() {
-        if (peek("\\[\\bnrt'\"]")){
-            match("\\[\\bnrt'\"]");
+        if (!match("\\\\")){ // Ensure \ begins escape sequence
+            throw new ParseException("Invalid Escape Sequence", chars.index);
         }
-        else{
-            throw new ParseException("Invalid Escape", chars.index);
+        else if (!match("[\\\\bnrt'\"]")){ // Ensure a valid escape sequence is issued
+
+            throw new ParseException("Invalid Escape Character", chars.index);
         }
     }
 
     public Token lexOperator() {
-        if (peek("[<>!=] '='?")){
-            match("[<>!=] '='?");
+        if (peek("[<>!=]")){
+            match("[<>!=]");
+            if(peek("=")){
+                match("=");
+            }
         }
         else if (peek("&&")){
             match("&&");
@@ -159,8 +164,8 @@ public final class Lexer {
         else if (peek("||")){
             match("||");
         }
-        else if (peek("[.]")){
-            match("[.]");
+        else if (peek(".")){
+            match(".");
         }
         else{
             throw new ParseException("Invalid Operator", chars.index);
